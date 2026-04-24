@@ -1,0 +1,41 @@
+[INFO] Scanning for projects...
+[INFO] 
+[INFO] ----------------------< com.igreja:church-system >----------------------
+[INFO] Building church-system-backend 0.0.1-SNAPSHOT
+[INFO]   from pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] >>> spring-boot:3.5.13-SNAPSHOT:run (default-cli) > test-compile @ church-system >>>
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ church-system ---
+[INFO] Copying 1 resource from src\main\resources to target\classes
+[INFO] Copying 16 resources from src\main\resources to target\classes
+[INFO] 
+[INFO] --- compiler:3.14.1:compile (default-compile) @ church-system ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ church-system ---
+[INFO] skip non existing resourceDirectory C:\projetos\igreja-system\backend\church-system-backend\src\test\resources
+[INFO] 
+[INFO] --- compiler:3.14.1:testCompile (default-testCompile) @ church-system ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] <<< spring-boot:3.5.13-SNAPSHOT:run (default-cli) < test-compile @ church-system <<<
+[INFO] 
+[INFO] 
+[INFO] --- spring-boot:3.5.13-SNAPSHOT:run (default-cli) @ church-system ---
+[INFO] Attaching agents: []
+
+  .   ____          _            __ _ _
+ /\\ / ___'_ __ _ _(_)_ __  __ _ \ \ \ \
+( ( )\___ | '_ | '_| | '_ \/ _` | \ \ \ \
+ \\/  ___)| |_)| | | | | || (_| |  ) ) ) )
+  '  |____| .__|_| |_|_| |_\__, | / / / /
+ =========|_|==============|___/=/_/_/_/
+
+ :: Spring Boot ::      (v3.5.13-SNAPSHOT)
+
+2026-04-13T11:51:20.409-03:00  INFO 15628 --- [church-system-backend] [           main] c.i.s.ChurchSystemBackendApplication     : Starting ChurchSystemBackendApplication using Java 21.0.10 with PID 15628 (C:\projetos\igreja-system\backend\church-system-backend\target\classes started by Estefheson in C:\projetos\igreja-system\backend\church-system-backend)
+2026-04-13T11:51:20.412-03:00  INFO 15628 --- [church-system-backend] [           main] c.i.s.ChurchSystemBackendApplication     : No active profile set, falling back to 1 default profile: "default"
+2026-04-13T11:51:21.060-03:00  INFO 15628 --- [church-system-backend] [           main] .s.d.r.c.RepositoryConfigurationDelegate : Bootstrapping Spring Data JPA repositories in DEFAULT mode.
+2026-04-13T11:51:21.149-03:00  INFO 15628 --- [church-system-backend] [           main] .s.d.r.c.RepositoryConfigurationDelegate : Finished Spring Data repository scanning in 81 ms. Found 10 JPA repository interfaces.

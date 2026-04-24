@@ -1,0 +1,45 @@
+spring:
+  application:
+    name: church-system-backend
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/church_system
+    username: postgres
+    password: Amanda0311@
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: true
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+auth:
+  jwt:
+    secret: 1234567890123456789012345678901212345678901234567890123456789012
+  password-reset:
+    expiration-minutes: 15
+    mail-from: no-reply@church-system.local
+
+server:
+  address: 0.0.0.0
+  port: 8080
+
+app:
+  cors:
+    allowed-origin-patterns:
+      - http://localhost:5173
+      - http://127.0.0.1:5173
+      - http://*:5173
+  uploads:
+    root-dir: ./uploads
+    rooms-dir: rooms
+    lists-dir: lists
+    public-path: /uploads
