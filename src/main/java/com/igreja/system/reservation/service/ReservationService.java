@@ -36,6 +36,10 @@ import java.util.stream.Stream;
 @Transactional(readOnly = true)
 public class ReservationService {
 
+    private static final String ROLE_ADMIN = "ROLE_ADMIN";
+    private static final String ROLE_LEADER = "ROLE_LEADER";
+    private static final String ROLE_MEMBER = "ROLE_MEMBER";
+
     private final ReservationRepository reservationRepository;
     private final RoomRepository roomRepository;
     private final MinistryRepository ministryRepository;
@@ -46,6 +50,7 @@ public class ReservationService {
 
     @Transactional
     public ReservationResponse create(ReservationCreateRequest request) {
+        validateCanCreateReservation();
         validateRequiredRoom(request.roomId());
         validateRequiredReservationDate(request.reservationDate());
         validateRequiredStartTime(request.startTime());
@@ -84,19 +89,24 @@ public class ReservationService {
 
     public List<ReservationResponse> findAll(Long roomId, LocalDate startDate, LocalDate endDate) {
         validateDateRange(startDate, endDate);
+        User authenticatedUser = findAuthenticatedUser();
 
-        return findReservationsByFilters(roomId, startDate, endDate)
+        return filterVisibleReservations(findReservationsByFilters(roomId, startDate, endDate), authenticatedUser)
                 .stream()
                 .map(this::toResponse)
                 .toList();
     }
 
     public ReservationResponse findById(Long id) {
-        return toResponse(findReservationById(id));
+        Reservation reservation = findReservationById(id);
+        validateCanViewReservation(reservation, findAuthenticatedUser());
+
+        return toResponse(reservation);
     }
 
     @Transactional
     public ReservationResponse approve(Long id) {
+        validateAdminAccess();
         Reservation reservation = findReservationById(id);
 
         if (reservation.getStatus() != ReservationStatus.PENDING) {
@@ -113,6 +123,7 @@ public class ReservationService {
 
     @Transactional
     public ReservationResponse cancel(Long id, ReservationCancelRequest request) {
+        validateAdminAccess();
         Reservation reservation = findReservationById(id);
         validateRequiredCancelReason(request);
 
@@ -185,6 +196,20 @@ public class ReservationService {
         }
     }
 
+    private void validateCanCreateReservation() {
+        if (isAdmin() || isLeader()) {
+            return;
+        }
+
+        throw new BusinessException("Usuario nao possui permissao para criar reservas");
+    }
+
+    private void validateAdminAccess() {
+        if (!isAdmin()) {
+            throw new BusinessException("Usuario nao possui permissao para aprovar ou cancelar reservas");
+        }
+    }
+
     private void validateRoomReservationRule(Room room, LocalDate reservationDate, LocalTime startTime, LocalTime endTime) {
         DayOfWeek reservationDayOfWeek = reservationDate.getDayOfWeek();
 
@@ -229,6 +254,30 @@ public class ReservationService {
     private Reservation findReservationById(Long id) {
         return reservationRepository.findByIdWithRelations(id)
                 .orElseThrow(() -> new BusinessException("Reserva nao encontrada"));
+    }
+
+    private List<Reservation> filterVisibleReservations(List<Reservation> reservations, User authenticatedUser) {
+        if (!isMember(authenticatedUser) || isAdmin(authenticatedUser) || isLeader(authenticatedUser)) {
+            return reservations;
+        }
+
+        return reservations.stream()
+                .filter(this::isApprovedReservation)
+                .toList();
+    }
+
+    private void validateCanViewReservation(Reservation reservation, User authenticatedUser) {
+        if (!isMember(authenticatedUser) || isAdmin(authenticatedUser) || isLeader(authenticatedUser)) {
+            return;
+        }
+
+        if (!isApprovedReservation(reservation)) {
+            throw new BusinessException("Reserva nao encontrada ou usuario sem permissao");
+        }
+    }
+
+    private boolean isApprovedReservation(Reservation reservation) {
+        return reservation.getStatus() == ReservationStatus.APPROVED;
     }
 
     private User findAuthenticatedUser() {
@@ -295,6 +344,38 @@ public class ReservationService {
         }
 
         return reservationRepository.findAllWithRelations();
+    }
+
+    private boolean isAdmin() {
+        return hasAuthority(ROLE_ADMIN);
+    }
+
+    private boolean isLeader() {
+        return hasAuthority(ROLE_LEADER);
+    }
+
+    private boolean hasAuthority(String roleName) {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+
+        return authentication != null
+                && authentication.getAuthorities() != null
+                && authentication.getAuthorities().stream().anyMatch(authority -> roleName.equals(authority.getAuthority()));
+    }
+
+    private boolean isAdmin(User user) {
+        return hasRole(user, ROLE_ADMIN);
+    }
+
+    private boolean isLeader(User user) {
+        return hasRole(user, ROLE_LEADER);
+    }
+
+    private boolean isMember(User user) {
+        return hasRole(user, ROLE_MEMBER);
+    }
+
+    private boolean hasRole(User user, String roleName) {
+        return user.getRoles().stream().anyMatch(role -> roleName.equals(role.getName()));
     }
 
     private ReservationResponse toResponse(Reservation reservation) {

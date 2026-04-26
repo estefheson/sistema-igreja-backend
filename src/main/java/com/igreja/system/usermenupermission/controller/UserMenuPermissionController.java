@@ -18,6 +18,11 @@ public class UserMenuPermissionController {
 
     private final UserMenuPermissionService userMenuPermissionService;
 
+    @GetMapping("/me/menu-permissions")
+    public UserMenuPermissionsResponse findMyMenuPermissions() {
+        return userMenuPermissionService.findMyMenuPermissions();
+    }
+
     @GetMapping("/{id}/menu-permissions")
     public UserMenuPermissionsResponse findByUserId(@PathVariable Long id) {
         return userMenuPermissionService.findByUserId(id);

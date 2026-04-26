@@ -136,6 +136,52 @@ public interface ScheduleNeedRepository extends JpaRepository<ScheduleNeed, Long
             join fetch sn.reservation reservation
             join fetch reservation.room room
             join fetch sn.ministry ministry
+            where reservation.status = :reservationStatus
+              and sn.date >= :startDate
+            order by sn.date asc, sn.startTime asc, sn.id asc
+            """)
+    List<ScheduleNeed> findApprovedDetailedByDateGreaterThanEqual(
+            @Param("startDate") LocalDate startDate,
+            @Param("reservationStatus") ReservationStatus reservationStatus
+    );
+
+    @Query("""
+            select distinct sn
+            from ScheduleNeed sn
+            join fetch sn.reservation reservation
+            join fetch reservation.room room
+            join fetch sn.ministry ministry
+            where reservation.status = :reservationStatus
+              and sn.date <= :endDate
+            order by sn.date asc, sn.startTime asc, sn.id asc
+            """)
+    List<ScheduleNeed> findApprovedDetailedByDateLessThanEqual(
+            @Param("endDate") LocalDate endDate,
+            @Param("reservationStatus") ReservationStatus reservationStatus
+    );
+
+    @Query("""
+            select distinct sn
+            from ScheduleNeed sn
+            join fetch sn.reservation reservation
+            join fetch reservation.room room
+            join fetch sn.ministry ministry
+            where reservation.status = :reservationStatus
+              and sn.date between :startDate and :endDate
+            order by sn.date asc, sn.startTime asc, sn.id asc
+            """)
+    List<ScheduleNeed> findApprovedDetailedByDateBetween(
+            @Param("startDate") LocalDate startDate,
+            @Param("endDate") LocalDate endDate,
+            @Param("reservationStatus") ReservationStatus reservationStatus
+    );
+
+    @Query("""
+            select distinct sn
+            from ScheduleNeed sn
+            join fetch sn.reservation reservation
+            join fetch reservation.room room
+            join fetch sn.ministry ministry
             where sn.id = :id
               and reservation.status = :reservationStatus
             """)

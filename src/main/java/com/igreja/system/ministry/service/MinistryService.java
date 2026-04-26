@@ -13,12 +13,15 @@ import com.igreja.system.ministry.entity.Ministry;
 import com.igreja.system.ministry.entity.MinistryMember;
 import com.igreja.system.ministry.repository.MinistryMemberRepository;
 import com.igreja.system.ministry.repository.MinistryRepository;
+import com.igreja.system.user.entity.User;
+import com.igreja.system.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Comparator;
 import java.util.List;
 
 @Service
@@ -26,12 +29,17 @@ import java.util.List;
 @Transactional(readOnly = true)
 public class MinistryService {
 
+    private static final String ROLE_ADMIN = "ROLE_ADMIN";
+    private static final String ROLE_LEADER = "ROLE_LEADER";
+
     private final MinistryRepository ministryRepository;
     private final MinistryMemberRepository ministryMemberRepository;
     private final MemberRepository memberRepository;
+    private final UserRepository userRepository;
 
     @Transactional
     public MinistryResponse create(MinistryCreateRequest request) {
+        validateAdminAccess();
         validateRequiredName(request.name());
         validateName(request.name());
 
@@ -47,18 +55,34 @@ public class MinistryService {
     }
 
     public List<MinistryResponse> findAll() {
-        return ministryRepository.findAll()
+        if (isAdmin()) {
+            return ministryRepository.findAll()
+                    .stream()
+                    .map(this::toResponse)
+                    .toList();
+        }
+
+        validateLeaderAccess();
+
+        Long authenticatedMemberId = findAuthenticatedMemberId();
+
+        return ministryRepository.findAllById(ministryMemberRepository.findLeaderMinistryIdsByMemberId(authenticatedMemberId))
                 .stream()
+                .sorted(Comparator.comparing(Ministry::getName).thenComparing(Ministry::getId))
                 .map(this::toResponse)
                 .toList();
     }
 
     public MinistryResponse findById(Long id) {
-        return toResponse(findMinistryById(id));
+        Ministry ministry = findMinistryById(id);
+        validateCanViewMinistry(ministry);
+
+        return toResponse(ministry);
     }
 
     public List<MinistryMemberResponse> findMembersByMinistryId(Long id) {
-        findMinistryById(id);
+        Ministry ministry = findMinistryById(id);
+        validateCanViewMinistry(ministry);
 
         return ministryMemberRepository.findAllByMinistryId(id)
                 .stream()
@@ -67,7 +91,8 @@ public class MinistryService {
     }
 
     public List<MinistryMemberResponse> findLeadersByMinistryId(Long id) {
-        findMinistryById(id);
+        Ministry ministry = findMinistryById(id);
+        validateCanViewMinistry(ministry);
 
         return ministryMemberRepository.findAllLeadersByMinistryId(id)
                 .stream()
@@ -78,13 +103,17 @@ public class MinistryService {
     @Transactional
     public MinistryResponse update(Long id, MinistryUpdateRequest request) {
         Ministry ministry = findMinistryById(id);
+        validateCanUpdateMinistry(ministry, request);
 
         validateRequiredName(request.name());
         validateName(request.name(), id);
 
         ministry.setName(request.name());
         ministry.setDescription(request.description());
-        ministry.setActive(request.active() != null ? request.active() : ministry.getActive());
+
+        if (isAdmin()) {
+            ministry.setActive(request.active() != null ? request.active() : ministry.getActive());
+        }
 
         Ministry updatedMinistry = ministryRepository.save(ministry);
 
@@ -93,6 +122,7 @@ public class MinistryService {
 
     @Transactional
     public MinistryResponse updateActive(Long id, MinistryActiveUpdateRequest request) {
+        validateAdminAccess();
         Ministry ministry = findMinistryById(id);
 
         if (request.active() == null) {
@@ -108,6 +138,7 @@ public class MinistryService {
 
     @Transactional
     public MinistryResponse addMember(Long id, Long memberId) {
+        validateAdminAccess();
         Ministry ministry = findMinistryById(id);
         Member member = findMemberById(memberId);
 
@@ -126,6 +157,7 @@ public class MinistryService {
 
     @Transactional
     public MinistryResponse removeMember(Long id, Long memberId) {
+        validateAdminAccess();
         Ministry ministry = findMinistryById(id);
         findMemberById(memberId);
 
@@ -142,7 +174,7 @@ public class MinistryService {
     @Transactional
     public MinistryMemberResponse updateLeader(Long ministryId, Long memberId, MinistryMemberLeaderUpdateRequest request) {
         validateLeaderRequired(request.leader());
-        validateAdminRole();
+        validateAdminAccess();
         findMinistryById(ministryId);
         findMemberById(memberId);
 
@@ -156,6 +188,88 @@ public class MinistryService {
         MinistryMember updatedMinistryMember = ministryMemberRepository.save(ministryMember);
 
         return toMemberResponse(updatedMinistryMember);
+    }
+
+    private void validateCanViewMinistry(Ministry ministry) {
+        if (isAdmin()) {
+            return;
+        }
+
+        validateLeaderAccess();
+
+        if (!isLeaderOfMinistry(ministry.getId())) {
+            throw new BusinessException("Usuario nao possui permissao para visualizar este ministerio");
+        }
+    }
+
+    private void validateCanUpdateMinistry(Ministry ministry, MinistryUpdateRequest request) {
+        if (isAdmin()) {
+            return;
+        }
+
+        validateLeaderAccess();
+
+        if (!isLeaderOfMinistry(ministry.getId())) {
+            throw new BusinessException("Usuario nao possui permissao para alterar este ministerio");
+        }
+
+        if (request.active() != null && !request.active().equals(ministry.getActive())) {
+            throw new BusinessException("Usuario nao possui permissao para alterar a situacao do ministerio");
+        }
+    }
+
+    private void validateLeaderAccess() {
+        if (!hasAuthority(ROLE_LEADER)) {
+            throw new BusinessException("Usuario nao possui permissao para visualizar ministerios");
+        }
+    }
+
+    private void validateAdminAccess() {
+        if (!isAdmin()) {
+            throw new BusinessException("Apenas administradores podem alterar dados de ministerios");
+        }
+    }
+
+    private boolean isLeaderOfMinistry(Long ministryId) {
+        Long authenticatedMemberId = findAuthenticatedMemberId();
+
+        return authenticatedMemberId != null
+                && ministryMemberRepository.existsByMinistryIdAndMemberIdAndLeaderTrue(ministryId, authenticatedMemberId);
+    }
+
+    private Long findAuthenticatedMemberId() {
+        User authenticatedUser = findAuthenticatedUser();
+
+        if (authenticatedUser.getMember() == null || authenticatedUser.getMember().getId() == null) {
+            return null;
+        }
+
+        return authenticatedUser.getMember().getId();
+    }
+
+    private boolean isAdmin() {
+        return hasAuthority(ROLE_ADMIN);
+    }
+
+    private User findAuthenticatedUser() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+
+        if (authentication == null || authentication.getName() == null || authentication.getName().isBlank()) {
+            throw new BusinessException("Usuario autenticado nao encontrado");
+        }
+
+        return userRepository.findByUsername(authentication.getName())
+                .orElseThrow(() -> new BusinessException("Usuario autenticado nao encontrado"));
+    }
+
+    private boolean hasAuthority(String roleName) {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+
+        return authentication != null
+                && authentication.getAuthorities() != null
+                && authentication.getAuthorities()
+                .stream()
+                .anyMatch(grantedAuthority -> roleName.equals(grantedAuthority.getAuthority()));
     }
 
     private void validateRequiredName(String name) {
@@ -181,20 +295,6 @@ public class MinistryService {
     private void validateLeaderRequired(Boolean leader) {
         if (leader == null) {
             throw new BusinessException("Leader e obrigatorio");
-        }
-    }
-
-    private void validateAdminRole() {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-
-        boolean isAdmin = authentication != null
-                && authentication.getAuthorities() != null
-                && authentication.getAuthorities()
-                .stream()
-                .anyMatch(grantedAuthority -> "ROLE_ADMIN".equals(grantedAuthority.getAuthority()));
-
-        if (!isAdmin) {
-            throw new BusinessException("Apenas administradores podem alterar lideranca");
         }
     }
 

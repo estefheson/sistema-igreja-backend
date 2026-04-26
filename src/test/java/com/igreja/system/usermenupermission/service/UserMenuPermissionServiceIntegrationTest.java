@@ -44,7 +44,54 @@ class UserMenuPermissionServiceIntegrationTest {
     }
 
     @Test
-    void shouldReturnServiceScalesByDefaultForMemberAndAllowAdminOverrides() {
+    void shouldReturnDefaultMenusForLeaderWithoutExplicitPermissions() {
+        long suffix = System.currentTimeMillis();
+
+        Member member = memberRepository.save(Member.builder()
+                .fullName("Lider Permissoes " + suffix)
+                .cpf(String.format("%011d", suffix % 100000000000L))
+                .birthDate(LocalDate.of(1990, 2, 2))
+                .email("menu.leader." + suffix + "@teste.local")
+                .phone("11999999999")
+                .active(true)
+                .build());
+
+        Long userId = null;
+
+        try {
+            UserResponse createdUser = userService.create(new UserCreateRequest(
+                    "menu.leader." + suffix,
+                    "menu.leader.user." + suffix + "@teste.local",
+                    "Senha@123",
+                    member.getId(),
+                    true,
+                    List.of("ROLE_LEADER")
+            ));
+            userId = createdUser.id();
+
+            authenticate(createdUser.username(), "ROLE_LEADER");
+
+            UserMenuPermissionsResponse myPermissions = userMenuPermissionService.findMyMenuPermissions();
+
+            assertThat(myPermissions.allowedMenus()).containsExactly(
+                    MenuKey.DASHBOARD,
+                    MenuKey.MEMBERS,
+                    MenuKey.MINISTRIES,
+                    MenuKey.ROOM_RESERVATIONS,
+                    MenuKey.RESERVATIONS,
+                    MenuKey.SCHEDULE_NEEDS,
+                    MenuKey.SERVICE_SCALES
+            );
+        } finally {
+            if (userId != null) {
+                userRepository.deleteById(userId);
+            }
+            memberRepository.deleteById(member.getId());
+        }
+    }
+
+    @Test
+    void shouldReturnRoleDefaultsForMemberAndAllowAdminOverrides() {
         long suffix = System.currentTimeMillis();
 
         Member member = memberRepository.save(Member.builder()
@@ -73,7 +120,10 @@ class UserMenuPermissionServiceIntegrationTest {
 
             UserMenuPermissionsResponse myPermissions = userMenuPermissionService.findMyMenuPermissions();
 
-            assertThat(myPermissions.allowedMenus()).containsExactly(MenuKey.SERVICE_SCALES);
+            assertThat(myPermissions.allowedMenus()).containsExactly(
+                    MenuKey.RESERVATIONS,
+                    MenuKey.SERVICE_SCALES
+            );
 
             authenticate("admin", "ROLE_ADMIN");
 
@@ -86,7 +136,7 @@ class UserMenuPermissionServiceIntegrationTest {
             );
 
             assertThat(updatedPermissions.allowedMenus())
-                    .containsExactly(MenuKey.ROOMS, MenuKey.RESERVATIONS, MenuKey.SERVICE_SCALES);
+                    .containsExactly(MenuKey.ROOMS, MenuKey.RESERVATIONS);
         } finally {
             if (userId != null) {
                 userRepository.deleteById(userId);

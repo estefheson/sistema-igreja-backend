@@ -17,7 +17,16 @@ public class MyServiceScaleController {
 
     private final ScheduleNeedService scheduleNeedService;
 
-    @GetMapping({"/api/my-service-scales", "/api/schedule-assignments/me", "/api/my-service-agenda"})
+    @GetMapping({
+            "/api/my-service-scales",
+            "/api/schedule-assignments/me",
+            "/api/schedule-assignments/me/agenda",
+            "/api/schedule-assignments/me/ministry-agenda",
+            "/api/service-assignments/me",
+            "/api/service-assignments/me/agenda",
+            "/api/service-assignments/me/ministry-agenda",
+            "/api/my-service-agenda"
+    })
     public List<ScheduleNeedResponse> findAll(
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate

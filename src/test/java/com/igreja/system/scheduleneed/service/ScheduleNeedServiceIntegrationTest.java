@@ -77,14 +77,14 @@ class ScheduleNeedServiceIntegrationTest {
     }
 
     @Test
-    void shouldReturnMinisterialAgendaForAuthenticatedMemberEvenWhenNotAssigned() {
+    void shouldReturnMinisterialAgendaForLeaderEvenWhenNotAssigned() {
         long suffix = System.currentTimeMillis();
 
-        Member authenticatedMember = memberRepository.save(Member.builder()
-                .fullName("Membro Agenda " + suffix)
+        Member leaderMember = memberRepository.save(Member.builder()
+                .fullName("Lider Agenda " + suffix)
                 .cpf(String.format("%011d", suffix % 100000000000L))
                 .birthDate(LocalDate.of(1990, 1, 1))
-                .email("agenda.member." + suffix + "@teste.local")
+                .email("agenda.leader." + suffix + "@teste.local")
                 .phone("11999999999")
                 .active(true)
                 .build());
@@ -99,15 +99,15 @@ class ScheduleNeedServiceIntegrationTest {
                 .build());
 
         Ministry ministry = ministryRepository.save(Ministry.builder()
-                .name("Ministerio Agenda " + suffix)
+                .name("Ministerio Agenda Lider " + suffix)
                 .description("Ministerio teste")
                 .active(true)
                 .build());
 
         ministryMemberRepository.save(MinistryMember.builder()
                 .ministry(ministry)
-                .member(authenticatedMember)
-                .leader(false)
+                .member(leaderMember)
+                .leader(true)
                 .build());
 
         ministryMemberRepository.save(MinistryMember.builder()
@@ -117,7 +117,7 @@ class ScheduleNeedServiceIntegrationTest {
                 .build());
 
         Room room = roomRepository.save(Room.builder()
-                .name("Sala Agenda " + suffix)
+                .name("Sala Agenda Lider " + suffix)
                 .description("Sala teste")
                 .capacity(20)
                 .usageRules("Regras")
@@ -125,12 +125,12 @@ class ScheduleNeedServiceIntegrationTest {
                 .build());
 
         UserResponse createdUser = userService.create(new UserCreateRequest(
-                "agenda.member." + suffix,
-                "agenda.user." + suffix + "@teste.local",
+                "agenda.leader." + suffix,
+                "agenda.leader.user." + suffix + "@teste.local",
                 "Senha@123",
-                authenticatedMember.getId(),
+                leaderMember.getId(),
                 true,
-                List.of("ROLE_MEMBER")
+                List.of("ROLE_LEADER")
         ));
 
         Long userId = createdUser.id();
@@ -168,7 +168,7 @@ class ScheduleNeedServiceIntegrationTest {
                     .assignedByUser(adminUser)
                     .build());
 
-            authenticate(createdUser.username(), "ROLE_MEMBER");
+            authenticate(createdUser.username(), "ROLE_LEADER");
 
             List<ScheduleNeedResponse> agenda = scheduleNeedService.findMyServiceAgenda(
                     LocalDate.of(2026, 4, 1),
@@ -184,23 +184,176 @@ class ScheduleNeedServiceIntegrationTest {
             assertThat(item.authenticatedMemberAssigned()).isFalse();
             assertThat(item.assignments()).hasSize(1);
             assertThat(item.assignments().getFirst().memberId()).isEqualTo(assignedMember.getId());
-            assertThat(item.assignments().getFirst().memberCpf()).isEqualTo(assignedMember.getCpf());
         } finally {
-            if (savedAssignment != null) {
-                scheduleAssignmentRepository.deleteById(savedAssignment.getId());
-            }
-            if (savedScheduleNeed != null) {
-                scheduleNeedRepository.deleteById(savedScheduleNeed.getId());
-            }
-            if (savedReservation != null) {
-                reservationRepository.deleteById(savedReservation.getId());
-            }
+            deleteScheduleFixtures(savedAssignment, savedScheduleNeed, savedReservation);
             userRepository.deleteById(userId);
             roomRepository.deleteById(room.getId());
             ministryMemberRepository.deleteAll(ministryMemberRepository.findAllByMinistryId(ministry.getId()));
             ministryRepository.deleteById(ministry.getId());
             memberRepository.deleteById(assignedMember.getId());
+            memberRepository.deleteById(leaderMember.getId());
+        }
+    }
+
+    @Test
+    void shouldReturnOnlyOwnAgendaForMember() {
+        long suffix = System.currentTimeMillis();
+
+        Member authenticatedMember = memberRepository.save(Member.builder()
+                .fullName("Membro Agenda " + suffix)
+                .cpf(String.format("%011d", suffix % 100000000000L))
+                .birthDate(LocalDate.of(1990, 2, 2))
+                .email("agenda.member." + suffix + "@teste.local")
+                .phone("11999999999")
+                .active(true)
+                .build());
+
+        Member otherMember = memberRepository.save(Member.builder()
+                .fullName("Outro Escalado " + suffix)
+                .cpf(String.format("%011d", (suffix + 1) % 100000000000L))
+                .birthDate(LocalDate.of(1991, 2, 2))
+                .email("agenda.other." + suffix + "@teste.local")
+                .phone("11888888888")
+                .active(true)
+                .build());
+
+        Ministry ministry = ministryRepository.save(Ministry.builder()
+                .name("Ministerio Agenda Membro " + suffix)
+                .description("Ministerio teste")
+                .active(true)
+                .build());
+
+        ministryMemberRepository.save(MinistryMember.builder()
+                .ministry(ministry)
+                .member(authenticatedMember)
+                .leader(false)
+                .build());
+
+        ministryMemberRepository.save(MinistryMember.builder()
+                .ministry(ministry)
+                .member(otherMember)
+                .leader(false)
+                .build());
+
+        Room room = roomRepository.save(Room.builder()
+                .name("Sala Agenda Membro " + suffix)
+                .description("Sala teste")
+                .capacity(20)
+                .usageRules("Regras")
+                .active(true)
+                .build());
+
+        UserResponse createdUser = userService.create(new UserCreateRequest(
+                "agenda.member." + suffix,
+                "agenda.member.user." + suffix + "@teste.local",
+                "Senha@123",
+                authenticatedMember.getId(),
+                true,
+                List.of("ROLE_MEMBER")
+        ));
+
+        Long userId = createdUser.id();
+        ScheduleAssignment ownAssignment = null;
+        ScheduleAssignment otherAssignment = null;
+        ScheduleNeed ownScheduleNeed = null;
+        ScheduleNeed otherScheduleNeed = null;
+        Reservation ownReservation = null;
+        Reservation otherReservation = null;
+
+        try {
+            User adminUser = userRepository.findByUsername("admin").orElse(null);
+
+            ownReservation = reservationRepository.save(Reservation.builder()
+                    .room(room)
+                    .reservationDate(LocalDate.of(2026, 4, 21))
+                    .startTime(LocalTime.of(19, 0))
+                    .endTime(LocalTime.of(21, 0))
+                    .description("Culto membro proprio")
+                    .status(ReservationStatus.APPROVED)
+                    .createdAt(LocalDateTime.now())
+                    .scheduleDemandMinistries(new LinkedHashSet<>(List.of(ministry)))
+                    .build());
+
+            ownScheduleNeed = scheduleNeedRepository.save(ScheduleNeed.builder()
+                    .reservation(ownReservation)
+                    .ministry(ministry)
+                    .date(ownReservation.getReservationDate())
+                    .startTime(ownReservation.getStartTime())
+                    .endTime(ownReservation.getEndTime())
+                    .status(ScheduleNeedStatus.FILLED)
+                    .build());
+
+            ownAssignment = scheduleAssignmentRepository.save(ScheduleAssignment.builder()
+                    .scheduleNeed(ownScheduleNeed)
+                    .member(authenticatedMember)
+                    .assignedByUser(adminUser)
+                    .build());
+
+            otherReservation = reservationRepository.save(Reservation.builder()
+                    .room(room)
+                    .reservationDate(LocalDate.of(2026, 4, 22))
+                    .startTime(LocalTime.of(19, 0))
+                    .endTime(LocalTime.of(21, 0))
+                    .description("Culto outro membro")
+                    .status(ReservationStatus.APPROVED)
+                    .createdAt(LocalDateTime.now())
+                    .scheduleDemandMinistries(new LinkedHashSet<>(List.of(ministry)))
+                    .build());
+
+            otherScheduleNeed = scheduleNeedRepository.save(ScheduleNeed.builder()
+                    .reservation(otherReservation)
+                    .ministry(ministry)
+                    .date(otherReservation.getReservationDate())
+                    .startTime(otherReservation.getStartTime())
+                    .endTime(otherReservation.getEndTime())
+                    .status(ScheduleNeedStatus.FILLED)
+                    .build());
+
+            otherAssignment = scheduleAssignmentRepository.save(ScheduleAssignment.builder()
+                    .scheduleNeed(otherScheduleNeed)
+                    .member(otherMember)
+                    .assignedByUser(adminUser)
+                    .build());
+
+            authenticate(createdUser.username(), "ROLE_MEMBER");
+
+            List<ScheduleNeedResponse> agenda = scheduleNeedService.findMyServiceAgenda(
+                    LocalDate.of(2026, 4, 1),
+                    LocalDate.of(2026, 4, 30)
+            );
+
+            assertThat(agenda).hasSize(1);
+
+            ScheduleNeedResponse item = agenda.getFirst();
+            assertThat(item.id()).isEqualTo(ownScheduleNeed.getId());
+            assertThat(item.authenticatedMemberAssigned()).isTrue();
+            assertThat(item.assignments()).extracting(assignment -> assignment.memberId())
+                    .containsExactly(authenticatedMember.getId());
+        } finally {
+            deleteScheduleFixtures(otherAssignment, otherScheduleNeed, otherReservation);
+            deleteScheduleFixtures(ownAssignment, ownScheduleNeed, ownReservation);
+            userRepository.deleteById(userId);
+            roomRepository.deleteById(room.getId());
+            ministryMemberRepository.deleteAll(ministryMemberRepository.findAllByMinistryId(ministry.getId()));
+            ministryRepository.deleteById(ministry.getId());
+            memberRepository.deleteById(otherMember.getId());
             memberRepository.deleteById(authenticatedMember.getId());
+        }
+    }
+
+    private void deleteScheduleFixtures(
+            ScheduleAssignment assignment,
+            ScheduleNeed scheduleNeed,
+            Reservation reservation
+    ) {
+        if (assignment != null) {
+            scheduleAssignmentRepository.deleteById(assignment.getId());
+        }
+        if (scheduleNeed != null) {
+            scheduleNeedRepository.deleteById(scheduleNeed.getId());
+        }
+        if (reservation != null) {
+            reservationRepository.deleteById(reservation.getId());
         }
     }
 

@@ -30,7 +30,21 @@ import java.util.Set;
 public class UserMenuPermissionService {
 
     private static final String ROLE_ADMIN = "ROLE_ADMIN";
+    private static final String ROLE_LEADER = "ROLE_LEADER";
     private static final String ROLE_MEMBER = "ROLE_MEMBER";
+    private static final Set<MenuKey> LEADER_DEFAULT_MENUS = EnumSet.of(
+            MenuKey.DASHBOARD,
+            MenuKey.MEMBERS,
+            MenuKey.MINISTRIES,
+            MenuKey.ROOM_RESERVATIONS,
+            MenuKey.RESERVATIONS,
+            MenuKey.SCHEDULE_NEEDS,
+            MenuKey.SERVICE_SCALES
+    );
+    private static final Set<MenuKey> MEMBER_DEFAULT_MENUS = EnumSet.of(
+            MenuKey.SERVICE_SCALES,
+            MenuKey.RESERVATIONS
+    );
 
     private final UserRepository userRepository;
     private final UserMenuPermissionRepository userMenuPermissionRepository;
@@ -123,15 +137,28 @@ public class UserMenuPermissionService {
         }
 
         boolean explicit = explicitPermissions.containsKey(menuKey);
+        boolean hasNoExplicitPermissions = explicitPermissions.isEmpty();
         boolean allowed = explicit
                 ? Boolean.TRUE.equals(explicitPermissions.get(menuKey))
-                : isAllowedByDefault(user, menuKey);
+                : isAllowedByDefault(user, menuKey, hasNoExplicitPermissions);
 
         return new MenuPermissionItemResponse(menuKey, allowed, explicit);
     }
 
-    private boolean isAllowedByDefault(User user, MenuKey menuKey) {
-        return menuKey == MenuKey.SERVICE_SCALES && hasRole(user, ROLE_MEMBER);
+    private boolean isAllowedByDefault(User user, MenuKey menuKey, boolean hasNoExplicitPermissions) {
+        if (hasRole(user, ROLE_ADMIN)) {
+            return true;
+        }
+
+        if (!hasNoExplicitPermissions) {
+            return false;
+        }
+
+        if (hasRole(user, ROLE_LEADER) && LEADER_DEFAULT_MENUS.contains(menuKey)) {
+            return true;
+        }
+
+        return hasRole(user, ROLE_MEMBER) && MEMBER_DEFAULT_MENUS.contains(menuKey);
     }
 
     private boolean isMenuAllowed(User user, MenuKey menuKey) {
@@ -140,7 +167,7 @@ public class UserMenuPermissionService {
 
         return explicit
                 ? Boolean.TRUE.equals(explicitPermissions.get(menuKey))
-                : isAllowedByDefault(user, menuKey);
+                : isAllowedByDefault(user, menuKey, explicitPermissions.isEmpty());
     }
 
     private boolean hasRole(User user, String roleName) {

@@ -32,6 +32,10 @@ import java.util.stream.Collectors;
 @Transactional(readOnly = true)
 public class ScheduleNeedService {
 
+    private static final String ROLE_ADMIN = "ROLE_ADMIN";
+    private static final String ROLE_LEADER = "ROLE_LEADER";
+    private static final String ROLE_MEMBER = "ROLE_MEMBER";
+
     private final ScheduleNeedRepository scheduleNeedRepository;
     private final ReservationRepository reservationRepository;
     private final ScheduleAssignmentService scheduleAssignmentService;
@@ -94,6 +98,13 @@ public class ScheduleNeedService {
     public List<ScheduleNeedResponse> findMyServiceAgenda(LocalDate startDate, LocalDate endDate) {
         validateDateRange(startDate, endDate);
 
+        if (isAdmin()) {
+            return buildAgendaResponse(
+                    findGeneralAgendaScheduleNeeds(startDate, endDate),
+                    findAuthenticatedMemberId()
+            );
+        }
+
         Long authenticatedMemberId = findAuthenticatedMemberId();
 
         if (authenticatedMemberId == null) {
@@ -107,15 +118,8 @@ public class ScheduleNeedService {
         }
 
         List<ScheduleNeed> scheduleNeeds = findMyAgendaScheduleNeeds(ministryIds, startDate, endDate);
-        Map<Long, List<ScheduleAssignmentResponse>> assignmentsByScheduleNeedId = loadAssignmentsByScheduleNeedId(scheduleNeeds);
 
-        return scheduleNeeds.stream()
-                .map(scheduleNeed -> toResponse(
-                        scheduleNeed,
-                        assignmentsByScheduleNeedId.getOrDefault(scheduleNeed.getId(), List.of()),
-                        authenticatedMemberId
-                ))
-                .toList();
+        return buildAgendaResponse(scheduleNeeds, authenticatedMemberId);
     }
 
     private List<ScheduleNeed> findMyAgendaScheduleNeeds(List<Long> ministryIds, LocalDate startDate, LocalDate endDate) {
@@ -146,6 +150,37 @@ public class ScheduleNeedService {
 
         return scheduleNeedRepository.findApprovedDetailedByMinistryIds(
                 ministryIds,
+                ReservationStatus.APPROVED
+        );
+    }
+
+    private List<ScheduleNeed> findGeneralAgendaScheduleNeeds(LocalDate startDate, LocalDate endDate) {
+        if (startDate != null && endDate != null) {
+            return scheduleNeedRepository.findApprovedDetailedByDateBetween(
+                    startDate,
+                    endDate,
+                    ReservationStatus.APPROVED
+            );
+        }
+
+        if (startDate != null) {
+            return scheduleNeedRepository.findApprovedDetailedByDateGreaterThanEqual(
+                    startDate,
+                    ReservationStatus.APPROVED
+            );
+        }
+
+        if (endDate != null) {
+            return scheduleNeedRepository.findApprovedDetailedByDateLessThanEqual(
+                    endDate,
+                    ReservationStatus.APPROVED
+            );
+        }
+
+        return scheduleNeedRepository.findApprovedDetailedByFilters(
+                null,
+                null,
+                null,
                 ReservationStatus.APPROVED
         );
     }
@@ -208,6 +243,54 @@ public class ScheduleNeedService {
                 ));
     }
 
+    private List<ScheduleNeedResponse> buildAgendaResponse(List<ScheduleNeed> scheduleNeeds, Long authenticatedMemberId) {
+        List<ScheduleNeed> completeScheduleNeeds = scheduleNeeds.stream()
+                .filter(this::hasRequiredAgendaRelations)
+                .toList();
+        Map<Long, List<ScheduleAssignmentResponse>> assignmentsByScheduleNeedId = loadAssignmentsByScheduleNeedId(completeScheduleNeeds);
+
+        return completeScheduleNeeds.stream()
+                .filter(scheduleNeed -> canIncludeInMyAgenda(
+                        scheduleNeed,
+                        assignmentsByScheduleNeedId.getOrDefault(scheduleNeed.getId(), List.of()),
+                        authenticatedMemberId
+                ))
+                .map(scheduleNeed -> toResponse(
+                        scheduleNeed,
+                        assignmentsByScheduleNeedId.getOrDefault(scheduleNeed.getId(), List.of()),
+                        authenticatedMemberId
+                ))
+                .toList();
+    }
+
+    private boolean canIncludeInMyAgenda(
+            ScheduleNeed scheduleNeed,
+            List<ScheduleAssignmentResponse> assignments,
+            Long authenticatedMemberId
+    ) {
+        if (isAdmin() || isLeader()) {
+            return true;
+        }
+
+        if (!isMember()) {
+            return false;
+        }
+
+        return authenticatedMemberId != null
+                && assignments.stream().anyMatch(assignment -> authenticatedMemberId.equals(assignment.memberId()));
+    }
+
+    private boolean hasRequiredAgendaRelations(ScheduleNeed scheduleNeed) {
+        return scheduleNeed != null
+                && scheduleNeed.getId() != null
+                && scheduleNeed.getReservation() != null
+                && scheduleNeed.getReservation().getId() != null
+                && scheduleNeed.getReservation().getRoom() != null
+                && scheduleNeed.getReservation().getRoom().getId() != null
+                && scheduleNeed.getMinistry() != null
+                && scheduleNeed.getMinistry().getId() != null;
+    }
+
     private void validateCanViewScheduleNeed(ScheduleNeed scheduleNeed) {
         if (isAdmin()) {
             return;
@@ -254,11 +337,23 @@ public class ScheduleNeedService {
     }
 
     private boolean isAdmin() {
+        return hasAuthority(ROLE_ADMIN);
+    }
+
+    private boolean isLeader() {
+        return hasAuthority(ROLE_LEADER);
+    }
+
+    private boolean isMember() {
+        return hasAuthority(ROLE_MEMBER);
+    }
+
+    private boolean hasAuthority(String roleName) {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
 
         return authentication != null
                 && authentication.getAuthorities() != null
-                && authentication.getAuthorities().stream().anyMatch(authority -> "ROLE_ADMIN".equals(authority.getAuthority()));
+                && authentication.getAuthorities().stream().anyMatch(authority -> roleName.equals(authority.getAuthority()));
     }
 
     private ScheduleNeedResponse toResponse(
