@@ -73,6 +73,15 @@ public class MinistryService {
                 .toList();
     }
 
+    public List<MinistryResponse> findAllActive() {
+        validateAdminOrLeaderAccess();
+
+        return ministryRepository.findAllByActiveTrueOrderByNameAscIdAsc()
+                .stream()
+                .map(this::toResponse)
+                .toList();
+    }
+
     public MinistryResponse findById(Long id) {
         Ministry ministry = findMinistryById(id);
         validateCanViewMinistry(ministry);
@@ -222,6 +231,14 @@ public class MinistryService {
         if (!hasAuthority(ROLE_LEADER)) {
             throw new BusinessException("Usuario nao possui permissao para visualizar ministerios");
         }
+    }
+
+    private void validateAdminOrLeaderAccess() {
+        if (isAdmin() || hasAuthority(ROLE_LEADER)) {
+            return;
+        }
+
+        throw new BusinessException("Usuario nao possui permissao para visualizar ministerios");
     }
 
     private void validateAdminAccess() {

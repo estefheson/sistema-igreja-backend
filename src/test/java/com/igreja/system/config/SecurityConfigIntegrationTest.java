@@ -43,6 +43,18 @@ class SecurityConfigIntegrationTest {
                         .with(user("member").authorities(new SimpleGrantedAuthority("ROLE_MEMBER"))))
                 .andExpect(status().isConflict());
 
+        mockMvc.perform(get("/api/reservations/pending")
+                        .with(user("member").authorities(new SimpleGrantedAuthority("ROLE_MEMBER"))))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(get("/api/reservations/pending")
+                        .with(user("leader").authorities(new SimpleGrantedAuthority("ROLE_LEADER"))))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(get("/api/reservations/pending")
+                        .with(user("admin").authorities(new SimpleGrantedAuthority("ROLE_ADMIN"))))
+                .andExpect(status().isOk());
+
         mockMvc.perform(post("/api/reservations")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{}")
@@ -68,6 +80,21 @@ class SecurityConfigIntegrationTest {
         mockMvc.perform(patch("/api/reservations/1/approve")
                         .with(user("admin").authorities(new SimpleGrantedAuthority("ROLE_ADMIN"))))
                 .andExpect(status().isConflict());
+    }
+
+    @Test
+    void shouldAllowAdminAndLeaderToReadActiveMinistriesButBlockMembers() throws Exception {
+        mockMvc.perform(get("/api/ministries/active")
+                        .with(user("leader").authorities(new SimpleGrantedAuthority("ROLE_LEADER"))))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/ministries/active")
+                        .with(user("admin").authorities(new SimpleGrantedAuthority("ROLE_ADMIN"))))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/ministries/active")
+                        .with(user("member").authorities(new SimpleGrantedAuthority("ROLE_MEMBER"))))
+                .andExpect(status().isForbidden());
     }
 
     @Test

@@ -25,7 +25,10 @@ import java.time.LocalDate;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.function.Function;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 @Service
 @RequiredArgsConstructor
@@ -44,7 +47,7 @@ public class ScheduleNeedService {
 
     @Transactional
     public List<ScheduleNeedResponse> createForReservation(Reservation reservation) {
-        return reservation.getScheduleDemandMinistries()
+        return resolveNeedMinistries(reservation).values()
                 .stream()
                 .filter(ministry -> !scheduleNeedRepository.existsByReservationIdAndMinistryId(
                         reservation.getId(),
@@ -53,6 +56,21 @@ public class ScheduleNeedService {
                 .map(ministry -> scheduleNeedRepository.save(createScheduleNeed(reservation, ministry)))
                 .map(scheduleNeed -> toResponse(scheduleNeed, List.of(), null))
                 .toList();
+    }
+
+    private Map<Long, Ministry> resolveNeedMinistries(Reservation reservation) {
+        return Stream.concat(
+                        Stream.of(reservation.getUsingMinistry()),
+                        reservation.getScheduleDemandMinistries().stream()
+                )
+                .filter(Objects::nonNull)
+                .filter(ministry -> ministry.getId() != null)
+                .collect(Collectors.toMap(
+                        Ministry::getId,
+                        Function.identity(),
+                        (existing, ignored) -> existing,
+                        LinkedHashMap::new
+                ));
     }
 
     public List<ScheduleNeedResponse> findAll(ScheduleNeedStatus status, LocalDate date) {

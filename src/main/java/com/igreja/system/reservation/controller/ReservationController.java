@@ -2,6 +2,7 @@ package com.igreja.system.reservation.controller;
 
 import com.igreja.system.reservation.dto.ReservationCreateRequest;
 import com.igreja.system.reservation.dto.ReservationCancelRequest;
+import com.igreja.system.reservation.dto.ReservationCalendarSummaryResponse;
 import com.igreja.system.reservation.dto.ReservationResponse;
 import com.igreja.system.reservation.service.ReservationService;
 import lombok.RequiredArgsConstructor;
@@ -37,6 +38,19 @@ public class ReservationController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate
     ) {
         return reservationService.findAll(roomId, startDate, endDate);
+    }
+
+    @GetMapping("/calendar-summary")
+    public List<ReservationCalendarSummaryResponse> findCalendarSummary(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate
+    ) {
+        return reservationService.findCalendarSummary(startDate, endDate);
+    }
+
+    @GetMapping("/pending")
+    public List<ReservationResponse> findPending() {
+        return reservationService.findPending();
     }
 
     @GetMapping("/{id}")

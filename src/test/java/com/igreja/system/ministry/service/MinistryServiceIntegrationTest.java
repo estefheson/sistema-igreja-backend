@@ -80,6 +80,12 @@ class MinistryServiceIntegrationTest {
                 .active(true)
                 .build());
 
+        Ministry inactiveMinistry = ministryRepository.save(Ministry.builder()
+                .name("Ministerio Inativo " + suffix)
+                .description("Ministerio inativo")
+                .active(false)
+                .build());
+
         ministryMemberRepository.save(MinistryMember.builder()
                 .ministry(ownedMinistry)
                 .member(leaderMember)
@@ -104,6 +110,13 @@ class MinistryServiceIntegrationTest {
             List<MinistryResponse> visibleMinistries = ministryService.findAll();
 
             assertThat(visibleMinistries).extracting(MinistryResponse::id).containsExactly(ownedMinistry.getId());
+
+            List<MinistryResponse> demandMinistries = ministryService.findAllActive();
+
+            assertThat(demandMinistries)
+                    .extracting(MinistryResponse::id)
+                    .contains(ownedMinistry.getId(), otherMinistry.getId())
+                    .doesNotContain(inactiveMinistry.getId());
 
             MinistryResponse updatedMinistry = ministryService.update(
                     ownedMinistry.getId(),
@@ -150,6 +163,7 @@ class MinistryServiceIntegrationTest {
                 userRepository.deleteById(userId);
             }
             ministryMemberRepository.deleteAll(ministryMemberRepository.findAllByMinistryId(ownedMinistry.getId()));
+            ministryRepository.deleteById(inactiveMinistry.getId());
             ministryRepository.deleteById(otherMinistry.getId());
             ministryRepository.deleteById(ownedMinistry.getId());
             memberRepository.deleteById(leaderMember.getId());

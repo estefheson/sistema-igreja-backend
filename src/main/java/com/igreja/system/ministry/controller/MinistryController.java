@@ -37,6 +37,11 @@ public class MinistryController {
         return ministryService.findAll();
     }
 
+    @GetMapping("/active")
+    public List<MinistryResponse> findAllActive() {
+        return ministryService.findAllActive();
+    }
+
     @GetMapping("/{id}")
     public MinistryResponse findById(@PathVariable Long id) {
         return ministryService.findById(id);

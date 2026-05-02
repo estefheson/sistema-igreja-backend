@@ -2,7 +2,9 @@ package com.igreja.system.reservation.service;
 
 import com.igreja.system.common.exception.BusinessException;
 import com.igreja.system.ministry.entity.Ministry;
+import com.igreja.system.ministry.repository.MinistryMemberRepository;
 import com.igreja.system.ministry.repository.MinistryRepository;
+import com.igreja.system.reservation.dto.ReservationCalendarSummaryResponse;
 import com.igreja.system.reservation.dto.ReservationCreateRequest;
 import com.igreja.system.reservation.dto.ReservationCancelRequest;
 import com.igreja.system.reservation.dto.ReservationResponse;
@@ -28,8 +30,12 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.stream.Stream;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -43,6 +49,7 @@ public class ReservationService {
     private final ReservationRepository reservationRepository;
     private final RoomRepository roomRepository;
     private final MinistryRepository ministryRepository;
+    private final MinistryMemberRepository ministryMemberRepository;
     private final UserRepository userRepository;
     private final ScheduleNeedService scheduleNeedService;
     private final ScheduleAssignmentRepository scheduleAssignmentRepository;
@@ -92,6 +99,35 @@ public class ReservationService {
         User authenticatedUser = findAuthenticatedUser();
 
         return filterVisibleReservations(findReservationsByFilters(roomId, startDate, endDate), authenticatedUser)
+                .stream()
+                .map(this::toResponse)
+                .toList();
+    }
+
+    public List<ReservationCalendarSummaryResponse> findCalendarSummary(LocalDate startDate, LocalDate endDate) {
+        validateDateRange(startDate, endDate);
+        User authenticatedUser = findAuthenticatedUser();
+
+        Map<LocalDate, List<Reservation>> reservationsByDate = filterVisibleReservationsForCalendar(
+                findReservationsByFilters(null, startDate, endDate),
+                authenticatedUser
+        ).stream()
+                .collect(Collectors.groupingBy(
+                        Reservation::getReservationDate,
+                        TreeMap::new,
+                        Collectors.toList()
+                ));
+
+        return reservationsByDate.entrySet()
+                .stream()
+                .map(entry -> toCalendarSummaryResponse(entry.getKey(), entry.getValue()))
+                .toList();
+    }
+
+    public List<ReservationResponse> findPending() {
+        validateCanViewPendingReservations();
+
+        return reservationRepository.findAllByStatusWithRelations(ReservationStatus.PENDING)
                 .stream()
                 .map(this::toResponse)
                 .toList();
@@ -210,6 +246,12 @@ public class ReservationService {
         }
     }
 
+    private void validateCanViewPendingReservations() {
+        if (!isAdmin()) {
+            throw new BusinessException("Usuario nao possui permissao para visualizar reservas pendentes");
+        }
+    }
+
     private void validateRoomReservationRule(Room room, LocalDate reservationDate, LocalTime startTime, LocalTime endTime) {
         DayOfWeek reservationDayOfWeek = reservationDate.getDayOfWeek();
 
@@ -266,6 +308,33 @@ public class ReservationService {
                 .toList();
     }
 
+    private List<Reservation> filterVisibleReservationsForCalendar(List<Reservation> reservations, User authenticatedUser) {
+        if (isAdmin(authenticatedUser)) {
+            return reservations;
+        }
+
+        if (isLeader(authenticatedUser)) {
+            return filterLeaderVisibleReservationsForCalendar(reservations, authenticatedUser);
+        }
+
+        if (isMember(authenticatedUser)) {
+            return reservations.stream()
+                    .filter(this::isApprovedReservation)
+                    .toList();
+        }
+
+        return List.of();
+    }
+
+    private List<Reservation> filterLeaderVisibleReservationsForCalendar(List<Reservation> reservations, User authenticatedUser) {
+        Set<Long> leaderMinistryIds = findLeaderMinistryIds(authenticatedUser);
+
+        return reservations.stream()
+                .filter(reservation -> isRequestedByUser(reservation, authenticatedUser)
+                        || isLinkedToAnyMinistry(reservation, leaderMinistryIds))
+                .toList();
+    }
+
     private void validateCanViewReservation(Reservation reservation, User authenticatedUser) {
         if (!isMember(authenticatedUser) || isAdmin(authenticatedUser) || isLeader(authenticatedUser)) {
             return;
@@ -278,6 +347,24 @@ public class ReservationService {
 
     private boolean isApprovedReservation(Reservation reservation) {
         return reservation.getStatus() == ReservationStatus.APPROVED;
+    }
+
+    private boolean isRequestedByUser(Reservation reservation, User authenticatedUser) {
+        return reservation.getRequestedBy() != null
+                && reservation.getRequestedBy().getId() != null
+                && authenticatedUser.getId() != null
+                && authenticatedUser.getId().equals(reservation.getRequestedBy().getId());
+    }
+
+    private boolean isLinkedToAnyMinistry(Reservation reservation, Set<Long> ministryIds) {
+        if (ministryIds.isEmpty()) {
+            return false;
+        }
+
+        return streamReservationMinistries(reservation)
+                .map(Ministry::getId)
+                .filter(Objects::nonNull)
+                .anyMatch(ministryIds::contains);
     }
 
     private User findAuthenticatedUser() {
@@ -294,6 +381,16 @@ public class ReservationService {
     private Ministry findMinistryById(Long id) {
         return ministryRepository.findById(id)
                 .orElseThrow(() -> new BusinessException("Ministerio nao encontrado"));
+    }
+
+    private Set<Long> findLeaderMinistryIds(User authenticatedUser) {
+        if (authenticatedUser.getMember() == null || authenticatedUser.getMember().getId() == null) {
+            return Set.of();
+        }
+
+        return new LinkedHashSet<>(ministryMemberRepository.findLeaderMinistryIdsByMemberId(
+                authenticatedUser.getMember().getId()
+        ));
     }
 
     private Set<Ministry> resolveScheduleDemandMinistries(List<Long> scheduleDemandMinistryIds) {
@@ -346,6 +443,18 @@ public class ReservationService {
         return reservationRepository.findAllWithRelations();
     }
 
+    private ReservationCalendarSummaryResponse toCalendarSummaryResponse(LocalDate date, List<Reservation> reservations) {
+        long approvedCount = reservations.stream()
+                .filter(this::isApprovedReservation)
+                .count();
+
+        return new ReservationCalendarSummaryResponse(
+                date,
+                approvedCount,
+                reservations.size()
+        );
+    }
+
     private boolean isAdmin() {
         return hasAuthority(ROLE_ADMIN);
     }
@@ -378,6 +487,14 @@ public class ReservationService {
         return user.getRoles().stream().anyMatch(role -> roleName.equals(role.getName()));
     }
 
+    private Stream<Ministry> streamReservationMinistries(Reservation reservation) {
+        return Stream.concat(
+                        Stream.of(reservation.getUsingMinistry()),
+                        reservation.getScheduleDemandMinistries().stream()
+                )
+                .filter(Objects::nonNull);
+    }
+
     private ReservationResponse toResponse(Reservation reservation) {
         List<Long> scheduleDemandMinistryIds = reservation.getScheduleDemandMinistries()
                 .stream()
@@ -391,11 +508,7 @@ public class ReservationService {
                 .sorted()
                 .toList();
 
-        List<Long> ministryIds = Stream.concat(
-                        Stream.of(reservation.getUsingMinistry()),
-                        reservation.getScheduleDemandMinistries().stream()
-                )
-                .filter(java.util.Objects::nonNull)
+        List<Long> ministryIds = streamReservationMinistries(reservation)
                 .map(Ministry::getId)
                 .distinct()
                 .sorted()

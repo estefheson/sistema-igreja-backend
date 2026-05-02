@@ -43,6 +43,20 @@ public interface ReservationRepository extends JpaRepository<Reservation, Long> 
             left join fetch r.requestedBy requestedBy
             left join fetch r.usingMinistry usingMinistry
             left join fetch r.scheduleDemandMinistries scheduleDemandMinistries
+            where r.status = :status
+            order by r.reservationDate asc, r.startTime asc, r.id asc
+            """)
+    List<Reservation> findAllByStatusWithRelations(
+            @Param("status") ReservationStatus status
+    );
+
+    @Query("""
+            select distinct r
+            from Reservation r
+            join fetch r.room room
+            left join fetch r.requestedBy requestedBy
+            left join fetch r.usingMinistry usingMinistry
+            left join fetch r.scheduleDemandMinistries scheduleDemandMinistries
             where room.id = :roomId
             order by r.reservationDate asc, r.startTime asc, r.id asc
             """)
